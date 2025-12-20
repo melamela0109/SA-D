@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시분설 팀플 - 숙소 예약 프로토타입</title>
+    
+    <!-- 아이콘 사용을 위한 FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- 실제 지도를 위한 Leaflet.js CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+    <style>
+        /* --- [Global Styles] --- */
+        :root {
+            --primary-color: #FF3366; /* 야놀자/앱 스타일 핑크 (찜한 숙소) */
+            --recent-color: #FFC107;  /* 노란색 (최근 본 숙소) */
+            --secondary-color: #333;
+            --bg-color: #f5f5f5;
+            --marker-base: #fff;
+            --text-color: #333;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        /* 모바일 디바이스 프레임 시뮬레이션 */
+        #app-frame {
+            width: 375px;
+            height: 812px;
+            background-color: white;
+            border-radius: 30px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- [Top Navigation] --- */
+        .top-nav {
+            height: 60px;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            background: white;
+            border-bottom: 1px solid #eee;
+            z-index: 10;
+            gap: 12px;
+        }
+        
+        /* 상단 뒤로가기 버튼 스타일 */
+        .nav-back-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #333;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-back-btn:hover {
+            background-color: #f0f0f0;
+        }
+
+        .search-pill {
+            background: #f0f0f0;
+            padding: 10px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #555;
+            flex-grow: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 500;
+        }
+
+        /* --- [Map Screen] --- */
+        #map-screen {
+            flex: 1;
+            position: relative;
+            background-color: #e8ecf0;
+            z-index: 1;
+        }
+
+        /* Leaflet 커스텀 마커 컨테이너 */
+        .custom-marker-container {
+            background: transparent;
+            border: none;
+        }
+
+        /* 지도 마커 스타일 정의 */
+        .marker-content {
+            background: white;
+            padding: 6px 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            font-size: 11px;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            transition: transform 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            min-width: 80px;
+            text-align: center;
+            border: 1px solid #ddd;
+            position: relative;
+        }
+
+        .marker-content:hover {
+            transform: scale(1.1);
+            z-index: 1000 !important;
+        }
+
+        .marker-content::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 6px 6px 0;
+            border-style: solid;
+            border-color: white transparent transparent transparent;
+        }
+
+        /* [FR-1] 찜한 숙소 (Picked) 스타일 - 빨간색(핑크) */
+        .marker-content.picked {
+            border: 2px solid var(--primary-color);
+            color: var(--primary-color);
+        }
+        .marker-content.picked::after {
+            border-color: var(--primary-color) transparent transparent transparent;
+        }
+        .marker-content.picked .marker-price {
+            color: var(--primary-color);
+        }
+        .marker-content.picked .marker-name {
+            color: var(--primary-color);
+        }
+
+        /* [FR-2] 최근 본 숙소 (Recent) 스타일 - 노란색 */
+        .marker-content.recent {
+            border: 2px solid var(--recent-color); /* 노란색 테두리 */
+            color: #333; /* 텍스트는 가독성을 위해 검정 유지 */
+            background-color: #FFFDE7; /* 아주 연한 노란 배경 */
+        }
+        .marker-content.recent::after {
+            /* 꼬리표도 노란색 테두리 색상과 매치 */
+            border-color: var(--recent-color) transparent transparent transparent;
+        }
+        /* 최근 본 숙소 아이콘(시계) 색상 */
+        .marker-content.recent i {
+            color: #F57F17; /* 아이콘은 좀 더 진한 오렌지/골드 계열로 강조 */
+        }
+
+        .marker-name {
+            font-size: 10px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 90px;
+        }
+        
+        .marker-price {
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        /* --- [Bottom Sheet: Accommodation Preview] --- */
+        #bottom-sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: white;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+            transform: translateY(110%);
+            transition: transform 0.3s ease-out;
+            z-index: 20;
+            padding-bottom: 20px;
+        }
+
+        #bottom-sheet.active {
+            transform: translateY(0);
+        }
+
+        /* 바텀 시트 닫기(뒤로가기) 버튼 스타일 - 흰색 */
+        .sheet-close-btn {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 30;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            font-size: 16px;
+            color: #333;
+            transition: background 0.2s, transform 0.2s;
+        }
+        .sheet-close-btn:hover {
+            background: white;
+            transform: scale(1.05);
+        }
+
+        .sheet-content {
+            padding: 20px;
+            padding-top: 10px;
+        }
+
+        .hotel-img-container {
+            width: 100%;
+            height: 180px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            background-color: #eee;
+            position: relative;
+        }
+
+        .hotel-img-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        /* --- [Booking Screen] --- */
+        #booking-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            z-index: 30;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #booking-screen.active {
+            transform: translateX(0);
+        }
+
+        .booking-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .back-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            margin-right: 15px;
+            cursor: pointer;
+        }
+
+        .booking-form {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .form-input, .form-select {
+            width: 90%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .form-select { width: 96%; }
+
+        .payment-methods {
+            display: flex;
+            gap: 10px;
+        }
+
+        .pm-btn {
+            flex: 1;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .pm-btn.selected {
+            border-color: var(--primary-color);
+            background-color: #fff0f5;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        /* --- [Alert Modal] --- */
+        #alert-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 50;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #alert-modal.show {
+            display: flex;
+        }
+
+        .modal-box {
+            background: white;
+            width: 80%;
+            padding: 25px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .modal-icon {
+            font-size: 40px;
+            color: #ff9800;
+            margin-bottom: 15px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .modal-desc {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        
+        .restore-badge {
+            display: inline-block;
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .btn-modal {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
+        .btn-retry {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .btn-cancel {
+            background-color: #eee;
+            color: #555;
+        }
+
+        /* Toast Message */
+        #toast {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 60;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        #toast.show {
+            opacity: 1;
+        }
+
+    </style>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+
+    <div id="app-frame">
+        
+        <!-- [1] 상단 검색바 -->
+        <div class="top-nav">
+            <button class="nav-back-btn" onclick="goBackToList()">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+            <div class="search-pill">
+                <span><i class="fa-solid fa-magnifying-glass"></i> 강남구 · 12.24~25 · 2명</span>
+                <i class="fa-solid fa-sliders"></i>
+            </div>
+        </div>
+
+        <!-- [2] 지도 화면 -->
+        <div id="map-screen"></div>
+
+        <!-- [3] 숙소 상세 프리뷰 (Bottom Sheet) -->
+        <div id="bottom-sheet">
+            <!-- 바텀 시트 닫기 버튼 (원래대로 흰색) -->
+            <button class="sheet-close-btn" onclick="closeBottomSheet()">
+                <i class="fa-solid fa-arrow-left"></i>
+            </button>
+
+            <div class="sheet-content">
+                <div class="hotel-img-container">
+                    <img id="sheet-img" src="" alt="숙소 대표 이미지">
+                </div>
+                
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h2 id="sheet-title" style="margin:0; font-size:18px;">숙소 이름</h2>
+                    <span id="sheet-rating" style="color:#f5a623; font-weight:bold;">★ 4.8</span>
+                </div>
+                <p id="sheet-desc" style="color:#666; font-size:13px; margin: 5px 0 15px;">강남역 1번출구 도보 5분</p>
+                <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                    <span style="font-size:12px; color:#888;">숙박(1박)</span>
+                    <span id="sheet-price" style="font-size:20px; font-weight:bold;">120,000원</span>
+                </div>
+                <button class="btn-primary" onclick="openBooking()">예약하기</button>
+            </div>
+        </div>
+
+        <!-- [4] 예약 및 결제 화면 -->
+        <div id="booking-screen">
+            <div class="booking-header">
+                <button class="back-btn" onclick="closeBooking()"><i class="fa-solid fa-arrow-left"></i></button>
+                <span>예약 및 결제</span>
+            </div>
+            <div class="booking-form">
+                <div class="form-group">
+                    <label class="form-label">예약자 이름</label>
+                    <input type="text" id="input-name" class="form-input" placeholder="이름을 입력하세요">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">휴대폰 번호</label>
+                    <input type="tel" id="input-phone" class="form-input" placeholder="010-0000-0000">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">할인 쿠폰</label>
+                    <!-- [수정] onchange 이벤트 추가: 쿠폰 변경 시 가격 재계산 -->
+                    <select id="input-coupon" class="form-select" onchange="updateTotalPrice()">
+                        <option value="0">적용 안함</option>
+                        <option value="5000">신규 회원 5,000원 할인</option>
+                        <option value="10000">겨울 시즌 10,000원 할인</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">결제 수단</label>
+                    <div class="payment-methods">
+                        <div class="pm-btn selected" onclick="selectPayment(this, 'card')">신용카드</div>
+                        <div class="pm-btn" onclick="selectPayment(this, 'kakao')">카카오페이</div>
+                    </div>
+                </div>
+                
+                <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-top:30px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <span>총 결제 금액</span>
+                        <span id="total-price" style="font-weight:bold; color:var(--primary-color);">120,000원</span>
+                    </div>
+                </div>
+            </div>
+            <div style="padding:20px; border-top:1px solid #eee;">
+                <button class="btn-primary" onclick="processPayment()">120,000원 결제하기</button>
+            </div>
+        </div>
+
+        <!-- [5] 결제 실패 알림 모달 -->
+        <div id="alert-modal">
+            <div class="modal-box">
+                <i class="fa-solid fa-circle-exclamation modal-icon"></i>
+                <div class="modal-title">결제에 실패했습니다</div>
+                <p class="modal-desc">
+                    네트워크 오류로 결제가 중단되었습니다.<br>
+                    <span class="restore-badge"> <i class="fa-solid fa-rotate-left"></i> 정보 복원됨</span><br>
+                    <br>입력하신 예약 정보와 쿠폰은<br> 안전하게 유지됩니다.
+                </p>
+                <button class="btn-modal btn-retry" onclick="closeModal()">결제수단 변경 후 재시도</button>
+                <button class="btn-modal btn-cancel" onclick="closeModal()">닫기</button>
+            </div>
+        </div>
+
+        <!-- Toast Message -->
+        <div id="toast">이전 입력 정보를 불러왔습니다.</div>
+
+    </div>
+
+    <script>
+        const accommodations = [
+            { 
+                id: 1, 
+                name: "시그니엘 서울", 
+                price: 450000, 
+                lat: 37.4985, 
+                lng: 127.0280, 
+                isPicked: true, 
+                isRecent: false, 
+                rating: 4.9,
+                img: "https://images.unsplash.com/photo-1566073771259-6a8506099945?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80"
+            },
+            { 
+                id: 2, 
+                name: "신라스테이 역삼", 
+                price: 150000, 
+                lat: 37.5000, 
+                lng: 127.0320, 
+                isPicked: false, 
+                isRecent: true, 
+                rating: 4.5,
+                img: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80"
+            },
+            { 
+                id: 3, 
+                name: "L7 강남", 
+                price: 120000, 
+                lat: 37.5020, 
+                lng: 127.0260, 
+                isPicked: false, 
+                isRecent: false, 
+                rating: 4.7,
+                img: "https://images.unsplash.com/photo-1618773928121-c32242e63f39?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80"
+            },
+            { 
+                id: 4, 
+                name: "어반플레이스", 
+                price: 80000, 
+                lat: 37.4960, 
+                lng: 127.0240, 
+                isPicked: false, 
+                isRecent: false, 
+                rating: 4.2,
+                img: "https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80"
+            }
+        ];
+
+        let selectedHotel = null;
+        let map = null;
+
+        function initMap() {
+            map = L.map('map-screen', {
+                zoomControl: false 
+            }).setView([37.498095, 127.027610], 14);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            accommodations.forEach(acc => {
+                let className = 'marker-content';
+                let iconHtml = '';
+                
+                if (acc.isPicked) {
+                    className += ' picked';
+                    iconHtml = '<i class="fa-solid fa-heart"></i> ';
+                } else if (acc.isRecent) {
+                    className += ' recent';
+                    iconHtml = '<i class="fa-regular fa-clock"></i> ';
+                }
+
+                const htmlContent = `
+                    <div class="${className}">
+                        <div class="marker-name">${iconHtml}${acc.name}</div>
+                        <div class="marker-price">${acc.price.toLocaleString()}</div>
+                    </div>
+                `;
+
+                const customIcon = L.divIcon({
+                    html: htmlContent,
+                    className: 'custom-marker-container',
+                    iconSize: [100, 45],
+                    iconAnchor: [50, 50]
+                });
+
+                L.marker([acc.lat, acc.lng], { icon: customIcon })
+                 .addTo(map)
+                 .on('click', () => showBottomSheet(acc));
+            });
+        }
+
+        function goBackToList() {
+            alert("목록 화면으로 돌아갑니다.");
+        }
+
+        const bottomSheet = document.getElementById('bottom-sheet');
+        
+        function showBottomSheet(acc) {
+            selectedHotel = acc;
+            document.getElementById('sheet-title').innerText = acc.name;
+            document.getElementById('sheet-price').innerText = acc.price.toLocaleString() + "원";
+            document.getElementById('sheet-rating').innerText = "★ " + acc.rating;
+            document.getElementById('sheet-img').src = acc.img;
+            
+            bottomSheet.classList.add('active');
+            map.flyTo([acc.lat, acc.lng], 15, { animate: true, duration: 0.5 });
+        }
+
+        // [NEW] 바텀 시트 닫기 함수
+        function closeBottomSheet() {
+            bottomSheet.classList.remove('active');
+            selectedHotel = null;
+        }
+
+        const bookingScreen = document.getElementById('booking-screen');
+        
+        function openBooking() {
+            if(!selectedHotel) return;
+            
+            // [수정] 예약 화면 진입 시 쿠폰 선택 초기화 및 가격 계산
+            document.getElementById('input-coupon').value = "0";
+            updateTotalPrice();
+            
+            bookingScreen.classList.add('active');
+            bottomSheet.classList.remove('active');
+        }
+
+        // [추가] 쿠폰 적용 시 총 결제 금액 업데이트 함수
+        function updateTotalPrice() {
+            if(!selectedHotel) return;
+
+            const basePrice = selectedHotel.price;
+            const discount = parseInt(document.getElementById('input-coupon').value) || 0;
+            const finalPrice = Math.max(0, basePrice - discount); // 음수 방지
+
+            // 화면 표시 금액 업데이트
+            document.getElementById('total-price').innerText = finalPrice.toLocaleString() + "원";
+            
+            // 결제 버튼 텍스트 업데이트
+            const payBtn = document.querySelector('#booking-screen .btn-primary');
+            if(payBtn) {
+                payBtn.innerText = finalPrice.toLocaleString() + "원 결제하기";
+            }
+        }
+
+        function closeBooking() {
+            bookingScreen.classList.remove('active');
+        }
+
+        function selectPayment(element, method) {
+            document.querySelectorAll('.pm-btn').forEach(btn => btn.classList.remove('selected'));
+            element.classList.add('selected');
+        }
+
+        function processPayment() {
+            const name = document.getElementById('input-name').value;
+            const phone = document.getElementById('input-phone').value;
+            
+            if (!name || !phone) {
+                alert("예약자 이름과 연락처를 입력해주세요.");
+                return;
+            }
+
+            const payBtn = document.querySelector('#booking-screen .btn-primary');
+            const originalText = payBtn.innerText;
+            payBtn.innerText = "결제 승인 요청 중...";
+            payBtn.disabled = true;
+
+            setTimeout(() => {
+                document.getElementById('alert-modal').classList.add('show');
+                payBtn.innerText = originalText;
+                payBtn.disabled = false;
+            }, 1000);
+        }
+
+        function closeModal() {
+            document.getElementById('alert-modal').classList.remove('show');
+            showToast();
+        }
+
+        function showToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        window.onload = initMap;
+
+    </script>
+</body>
+</html>
